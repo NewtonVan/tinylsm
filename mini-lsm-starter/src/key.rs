@@ -54,6 +54,11 @@ impl Key<Vec<u8>> {
         self.0.extend(key_slice.0);
     }
 
+    pub fn set_from_vec(&mut self, key: Vec<u8>) {
+        self.0.clear();
+        self.0.extend(key.iter());
+    }
+
     pub fn as_key_slice(&self) -> KeySlice {
         Key(self.0.as_slice())
     }
