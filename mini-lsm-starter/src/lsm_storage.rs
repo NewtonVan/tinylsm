@@ -347,6 +347,7 @@ impl LsmStorageInner {
         // find in sst
         let keep_table = |key: &[u8], table: &SsTable| {
             key_within(key, table.first_key().as_key_slice(), table.last_key().as_key_slice())
+                && table.bloom.as_ref().map_or(true, |bloom| bloom.may_contain(farmhash::fingerprint32(key)))
         };
         let key = KeySlice::from_slice(_key);
         for sst_id in snapshot.l0_sstables.iter() {
