@@ -486,8 +486,14 @@ impl LsmStorageInner {
             // pop last imm tables
             let mem = snapshot.imm_memtables.pop().unwrap();
             assert_eq!(mem.id(), sst_id);
-            // push sst into l0
-            snapshot.l0_sstables.insert(0, sst_id);
+            // push sst l0 table
+            if self.compaction_controller.flush_to_l0() {
+                // In leveled compaction or no compaction, simply flush to L0
+                snapshot.l0_sstables.insert(0, sst_id);
+            } else {
+                // In tiered compaction, create a new tier
+                snapshot.levels.insert(0, (sst_id, vec![sst_id]));
+            }
             snapshot.sstables.insert(sst_id, table);
             // update state
             *guard = Arc::new(snapshot);

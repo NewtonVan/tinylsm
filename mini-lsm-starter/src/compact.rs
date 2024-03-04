@@ -185,8 +185,8 @@ impl LsmStorageInner {
                                        lower_level: _lower_level,
                                        lower_level_sst_ids,
                                        is_lower_level_bottom_level
-                                   }) => {
-                if let Some(_upper_level) = upper_level {
+                                   }) => match upper_level {
+                Some(_upper_level) => {
                     // upper iter
                     let mut upper_sst = Vec::with_capacity(upper_level_sst_ids.len());
                     for id in upper_level_sst_ids {
@@ -205,7 +205,8 @@ impl LsmStorageInner {
                         )?,
                         *is_lower_level_bottom_level,
                     )
-                } else {
+                }
+                _ => {
                     // l0 iter
                     let mut upper_iters = Vec::with_capacity(upper_level_sst_ids.len());
                     for id in upper_level_sst_ids {
@@ -226,9 +227,26 @@ impl LsmStorageInner {
                         *is_lower_level_bottom_level,
                     )
                 }
+            },
+            CompactionTask::Tiered(TieredCompactionTask { tiers, bottom_tier_included }) => {
+                let mut tier_iters = Vec::with_capacity(tiers.len());
+                for (_, tier) in tiers {
+                    let mut tier_ssts = Vec::with_capacity(tier.len());
+                    for id in tier {
+                        tier_ssts.push(snapshot.sstables[id].clone());
+                    }
+                    tier_iters.push(
+                        Box::new(
+                            SstConcatIterator::create_and_seek_to_first(tier_ssts)?
+                        )
+                    );
+                }
+                self.compact_generate_sst_from_iter(
+                    MergeIterator::create(tier_iters),
+                    *bottom_tier_included,
+                )
             }
             // CompactionTask::Leveled(_) => {}
-            // CompactionTask::Tiered(_) => {}
             _ => {
                 Ok(vec![])
             }
