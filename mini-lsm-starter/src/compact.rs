@@ -23,6 +23,7 @@ pub use simple_leveled::{
 pub use tiered::{TieredCompactionController, TieredCompactionOptions, TieredCompactionTask};
 
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -308,6 +309,11 @@ impl LsmStorageInner {
             state.levels[0].1 = ids.clone();
 
             *self.state.write() = Arc::new(state);
+            self.sync_dir()?;
+            self.manifest.as_ref().unwrap().add_record(
+                &_state_lock,
+                ManifestRecord::Compaction(compaction_task, ids.clone()),
+            )?;
         }
         // rm files
         for id in l0_sstables.iter().chain(l1_sstables.iter()) {
@@ -350,6 +356,11 @@ impl LsmStorageInner {
 
             let mut state = self.state.write();
             *state = Arc::new(snapshot);
+            self.sync_dir()?;
+            self.manifest
+                .as_ref()
+                .unwrap()
+                .add_record(&_state_lock, ManifestRecord::Compaction(task, output))?;
 
             rm_files
         };
