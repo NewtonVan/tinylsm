@@ -49,12 +49,24 @@ impl MemTable {
 
     /// Create a new mem-table with WAL
     pub fn create_with_wal(_id: usize, _path: impl AsRef<Path>) -> Result<Self> {
-        unimplemented!()
+        Ok(MemTable {
+            map: Arc::new(SkipMap::new()),
+            wal: Wal::create(_path).ok(),
+            id: _id,
+            approximate_size: Arc::new(AtomicUsize::new(0)),
+        })
     }
 
     /// Create a memtable from WAL
     pub fn recover_from_wal(_id: usize, _path: impl AsRef<Path>) -> Result<Self> {
-        unimplemented!()
+        let skip_map = SkipMap::new();
+        let (wal, approximate_size) = Wal::recover(_path, &skip_map)?;
+        Ok(MemTable {
+            map: Arc::new(skip_map),
+            wal: Some(wal),
+            id: _id,
+            approximate_size: Arc::new(AtomicUsize::new(approximate_size)),
+        })
     }
 
     pub fn for_testing_put_slice(&self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -88,6 +100,9 @@ impl MemTable {
             .insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
         self.approximate_size
             .fetch_add(estimate_size, std::sync::atomic::Ordering::Relaxed);
+        if let Some(ref wal) = self.wal {
+            wal.put(_key, _value)?;
+        }
         Ok(())
     }
 
@@ -106,7 +121,7 @@ impl MemTable {
             iter_builder: |map| map.range((lower, upper)),
             item: (Bytes::new(), Bytes::new()),
         }
-            .build();
+        .build();
         let entry = iter.with_iter_mut(|iter| MemTableIterator::entry_to_item(iter.next()));
         iter.with_mut(|x| *x.item = entry);
         iter
