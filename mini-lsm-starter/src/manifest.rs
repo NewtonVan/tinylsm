@@ -5,8 +5,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use bytes::Buf;
+use anyhow::{bail, Context, Result};
+use bytes::{Buf, BufMut};
 use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,12 @@ impl Manifest {
             let slice = &buf_ptr[..len as usize];
             let record: ManifestRecord = serde_json::from_slice(slice)?;
             buf_ptr.advance(len as usize);
+
+            let checksum = crc32fast::hash(slice);
+            if checksum != buf_ptr.get_u32() {
+                bail!("manifest fail to match checksum");
+            }
+
             records.push(record);
         }
 
@@ -72,9 +78,14 @@ impl Manifest {
     }
 
     pub fn add_record_when_init(&self, _record: ManifestRecord) -> Result<()> {
-        let buf = serde_json::to_vec(&_record)?;
+        let mut buf = serde_json::to_vec(&_record)?;
+        let len = buf.len();
+        let checksum = crc32fast::hash(&buf[..]);
+        buf.put_u32(checksum);
+
         let mut guard = self.file.lock();
-        guard.write_all(&(buf.len() as u64).to_be_bytes())?;
+
+        guard.write_all(&(len as u64).to_be_bytes())?;
         guard.write_all(&buf)?;
         guard.sync_all()?;
         Ok(())
