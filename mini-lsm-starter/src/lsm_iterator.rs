@@ -1,22 +1,22 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
-use std::collections::Bound;
 use anyhow::{bail, Result};
 use bytes::Bytes;
+use std::collections::Bound;
 
+use crate::iterators::concat_iterator::SstConcatIterator;
+use crate::iterators::two_merge_iterator::TwoMergeIterator;
+use crate::table::SsTableIterator;
 use crate::{
     iterators::{merge_iterator::MergeIterator, StorageIterator},
     mem_table::MemTableIterator,
 };
-use crate::iterators::concat_iterator::SstConcatIterator;
-use crate::iterators::two_merge_iterator::TwoMergeIterator;
-use crate::table::SsTableIterator;
 
 /// Represents the internal type for an LSM iterator. This type will be changed across the tutorial for multiple times.
 type LsmIteratorInner = TwoMergeIterator<
     TwoMergeIterator<MergeIterator<MemTableIterator>, MergeIterator<SsTableIterator>>,
-    MergeIterator<SstConcatIterator>
+    MergeIterator<SstConcatIterator>,
 >;
 
 pub struct LsmIterator {
@@ -55,13 +55,9 @@ impl LsmIterator {
     fn is_valid_inner(&self) -> bool {
         if self.inner.is_valid() {
             match self.upper_bound.as_ref() {
-                Bound::Included(key) => {
-                    self.inner.key().raw_ref() <= key.as_ref()
-                }
-                Bound::Excluded(key) => {
-                    self.inner.key().raw_ref() < key.as_ref()
-                }
-                Bound::Unbounded => true
+                Bound::Included(key) => self.inner.key().key_ref() <= key.as_ref(),
+                Bound::Excluded(key) => self.inner.key().key_ref() < key.as_ref(),
+                Bound::Unbounded => true,
             }
         } else {
             false
@@ -77,7 +73,7 @@ impl StorageIterator for LsmIterator {
     }
 
     fn key(&self) -> &[u8] {
-        self.inner.key().raw_ref()
+        self.inner.key().key_ref()
     }
 
     fn value(&self) -> &[u8] {

@@ -1,8 +1,8 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
-use bytes::BufMut;
 use crate::key::{KeySlice, KeyVec};
+use bytes::BufMut;
 
 use super::{Block, SIZEOF_U16};
 
@@ -37,10 +37,10 @@ impl BlockBuilder {
     fn compute_overlap(&self, key: KeySlice) -> usize {
         let mut i = 0;
         loop {
-            if i >= self.first_key.len() || i >= key.len() {
+            if i >= self.first_key.key_len() || i >= key.key_len() {
                 break;
             }
-            if self.first_key.raw_ref()[i] != key.raw_ref()[i] {
+            if self.first_key.key_ref()[i] != key.key_ref()[i] {
                 break;
             }
             i += 1;
@@ -51,11 +51,13 @@ impl BlockBuilder {
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-        let key_lth = key.len();
+        let key_lth = key.key_len();
         let value_lth = value.len();
         let offset = self.data.len();
 
-        if self.estimate_size() + key_lth + value_lth + SIZEOF_U16 * 3 /* record var length */ > self.block_size && !self.is_empty() {
+        if self.estimate_size() + key_lth + value_lth + SIZEOF_U16 * 3 /* record var length */ > self.block_size
+            && !self.is_empty()
+        {
             return false;
         }
 
@@ -66,7 +68,9 @@ impl BlockBuilder {
         // rest key len
         self.data.put_u16((key_lth - overlap) as u16);
         // key
-        self.data.put(&key.into_inner()[overlap..]);
+        self.data.put(&key.key_ref()[overlap..]);
+        // timestamp
+        self.data.put_u64(key.ts());
         // value len
         self.data.put_u16(value_lth as u16);
         // value

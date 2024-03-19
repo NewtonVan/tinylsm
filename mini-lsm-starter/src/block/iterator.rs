@@ -1,11 +1,12 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
+use bytes::Buf;
 use std::cmp::Ordering;
 use std::sync::Arc;
-use bytes::Buf;
 
 use crate::key::{KeySlice, KeyVec};
+use crate::table::SIZEOF_U64;
 
 use super::{Block, SIZEOF_U16};
 
@@ -29,7 +30,9 @@ impl Block {
         entry.get_u16();
         let lth = entry.get_u16() as usize;
         let key = &entry[..lth];
-        KeyVec::from_vec(key.to_vec())
+        entry.advance(lth);
+        let ts = entry.get_u64();
+        KeyVec::from_vec_with_ts(key.to_vec(), ts)
     }
 }
 
@@ -99,13 +102,20 @@ impl BlockIterator {
         let overlap = entry.get_u16() as usize;
         let rest_key_len = entry.get_u16() as usize;
         self.key.clear();
-        self.key.append(&self.first_key.raw_ref()[..overlap]);
+        self.key.append(&self.first_key.key_ref()[..overlap]);
         self.key.append(&entry[..rest_key_len]);
         entry.advance(rest_key_len);
+        let ts = entry.get_u64();
+        self.key.set_ts(ts);
 
         let value_lth = entry.get_u16() as usize;
-        let value_offset_head = offset + SIZEOF_U16 /* overlap */ + SIZEOF_U16 /* rest key len */ + rest_key_len + SIZEOF_U16 /* value len */;
+        let value_offset_head = offset + SIZEOF_U16 /* overlap */ + SIZEOF_U16 /* rest key len */ + rest_key_len + SIZEOF_U64 /* ts */ + SIZEOF_U16 /* value len */;
         let value_offset_rear = value_offset_head + value_lth;
+        assert_eq!(
+            entry.as_ptr() as usize - self.block.data.as_ptr() as usize,
+            value_offset_head,
+            "incorrect cursor"
+        );
         self.value_range = (value_offset_head, value_offset_rear);
     }
 

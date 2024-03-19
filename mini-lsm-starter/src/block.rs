@@ -28,7 +28,7 @@ impl Block {
         }
         buf.put_u16(num as u16);
 
-        buf.into()
+        Bytes::from(buf)
     }
 
     /// Decode from the data layout, transform the input `data` to a single `Block`
@@ -47,9 +47,6 @@ impl Block {
         // collect datas
         let data = data[0..offsets_begin].to_vec();
 
-        Self {
-            data,
-            offsets,
-        }
+        Self { data, offsets }
     }
 }

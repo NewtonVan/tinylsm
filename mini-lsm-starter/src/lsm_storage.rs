@@ -20,7 +20,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::KeySlice;
+use crate::key::{KeySlice, TS_RANGE_BEGIN};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
@@ -271,12 +271,12 @@ fn range_overlap(
 ) -> bool {
     match user_upper {
         Bound::Included(upper) => {
-            if upper < ss_lower.raw_ref() {
+            if upper < ss_lower.key_ref() {
                 return false;
             }
         }
         Bound::Excluded(upper) => {
-            if upper <= ss_lower.raw_ref() {
+            if upper <= ss_lower.key_ref() {
                 return false;
             }
         }
@@ -284,12 +284,12 @@ fn range_overlap(
     }
     match user_lower {
         Bound::Included(lower) => {
-            if lower > ss_upper.raw_ref() {
+            if lower > ss_upper.key_ref() {
                 return false;
             }
         }
         Bound::Excluded(lower) => {
-            if lower >= ss_upper.raw_ref() {
+            if lower >= ss_upper.key_ref() {
                 return false;
             }
         }
@@ -299,7 +299,7 @@ fn range_overlap(
 }
 
 fn key_within(user_key: &[u8], ss_lower: KeySlice, ss_upper: KeySlice) -> bool {
-    user_key >= ss_lower.raw_ref() && user_key <= ss_upper.raw_ref()
+    user_key >= ss_lower.key_ref() && user_key <= ss_upper.key_ref()
 }
 
 impl LsmStorageInner {
@@ -495,7 +495,7 @@ impl LsmStorageInner {
                 bloom.may_contain(farmhash::fingerprint32(key))
             })
         };
-        let key = KeySlice::from_slice(_key);
+        let key = KeySlice::from_slice(_key, TS_RANGE_BEGIN);
         for sst_id in snapshot.l0_sstables.iter() {
             let sstable = snapshot.sstables[sst_id].clone();
             if keep_table(_key, &sstable) {
@@ -726,15 +726,16 @@ impl LsmStorageInner {
                 sstable.last_key().as_key_slice(),
             ) {
                 let iter = match _lower {
-                    Bound::Included(key) => {
-                        SsTableIterator::create_and_seek_to_key(sstable, KeySlice::from_slice(key))?
-                    }
+                    Bound::Included(key) => SsTableIterator::create_and_seek_to_key(
+                        sstable,
+                        KeySlice::from_slice(key, TS_RANGE_BEGIN),
+                    )?,
                     Bound::Excluded(key) => {
                         let mut iter = SsTableIterator::create_and_seek_to_key(
                             sstable,
-                            KeySlice::from_slice(key),
+                            KeySlice::from_slice(key, TS_RANGE_BEGIN),
                         )?;
-                        if iter.is_valid() && iter.key().raw_ref() == key {
+                        if iter.is_valid() && iter.key().key_ref() == key {
                             iter.next()?;
                         }
                         iter
@@ -754,13 +755,16 @@ impl LsmStorageInner {
                 ssts.push(snapshot.sstables[id].clone());
             }
             let iter = match _lower {
-                Bound::Included(key) => {
-                    SstConcatIterator::create_and_seek_to_key(ssts, KeySlice::from_slice(key))?
-                }
+                Bound::Included(key) => SstConcatIterator::create_and_seek_to_key(
+                    ssts,
+                    KeySlice::from_slice(key, TS_RANGE_BEGIN),
+                )?,
                 Bound::Excluded(key) => {
-                    let mut iter =
-                        SstConcatIterator::create_and_seek_to_key(ssts, KeySlice::from_slice(key))?;
-                    if iter.is_valid() && iter.key().raw_ref() == key {
+                    let mut iter = SstConcatIterator::create_and_seek_to_key(
+                        ssts,
+                        KeySlice::from_slice(key, TS_RANGE_BEGIN),
+                    )?;
+                    if iter.is_valid() && iter.key().key_ref() == key {
                         iter.next()?;
                     }
                     iter
