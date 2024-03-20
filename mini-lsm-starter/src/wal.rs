@@ -6,6 +6,7 @@ use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::key::{KeyBytes, KeySlice};
 use crate::table::SIZEOF_U16;
 use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, Bytes};
@@ -31,7 +32,7 @@ impl Wal {
 
     pub fn recover(
         _path: impl AsRef<Path>,
-        skip_list: &SkipMap<Bytes, Bytes>,
+        skip_list: &SkipMap<KeyBytes, Bytes>,
     ) -> Result<(Self, usize)> {
         let mut file = OpenOptions::new()
             .read(true)
@@ -45,8 +46,10 @@ impl Wal {
         while buf_ptr.has_remaining() {
             let key_len = buf_ptr.get_u16();
             let key_slice = &buf_ptr[..key_len as usize];
-            let key = Bytes::copy_from_slice(key_slice);
             buf_ptr.advance(key_len as usize);
+            let ts = buf_ptr.get_u64();
+            let key = KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(key_slice), ts);
+
             let value_len = buf_ptr.get_u16();
             let value_slice = &buf_ptr[..value_len as usize];
             let value = Bytes::copy_from_slice(value_slice);
@@ -55,6 +58,7 @@ impl Wal {
             let mut hasher = crc32fast::Hasher::new();
             hasher.write_u16(key_len);
             hasher.write(key_slice);
+            hasher.write_u64(ts);
             hasher.write_u16(value_len);
             hasher.write(value_slice);
             let checksum = buf_ptr.get_u32();
@@ -73,18 +77,22 @@ impl Wal {
         ))
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let mut writer = self.file.lock();
-        let mut buf: Vec<u8> = Vec::with_capacity(key.len() + value.len() + SIZEOF_U16);
+        let mut buf: Vec<u8> = Vec::with_capacity(key.raw_len() + value.len() + SIZEOF_U16);
         let mut hasher = crc32fast::Hasher::new();
 
-        hasher.write_u16(key.len() as u16);
-        hasher.write(key);
+        hasher.write_u16(key.key_len() as u16);
+        hasher.write(key.key_ref());
+        hasher.write_u64(key.ts());
         hasher.write_u16(value.len() as u16);
         hasher.write(value);
 
-        buf.put_u16(key.len() as u16);
-        buf.put_slice(key);
+        // key
+        buf.put_u16(key.key_len() as u16);
+        buf.put_slice(key.key_ref());
+        buf.put_u64(key.ts());
+        // value
         buf.put_u16(value.len() as u16);
         buf.put_slice(value);
         let checksum = hasher.finalize();

@@ -20,11 +20,7 @@ impl<
     > TwoMergeIterator<A, B>
 {
     pub fn create(a: A, b: B) -> Result<Self> {
-        let mut iter = Self {
-            use_a: false,
-            a,
-            b,
-        };
+        let mut iter = Self { use_a: false, a, b };
         iter.skip_read_b()?;
         iter.use_a = Self::choose_a(&iter.a, &iter.b);
         Ok(iter)

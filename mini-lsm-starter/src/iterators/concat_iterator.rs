@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
 use super::StorageIterator;
 use crate::{
     key::KeySlice,
     table::{SsTable, SsTableIterator},
 };
+use anyhow::Result;
 
 /// Concat multiple iterators ordered in key order and their key ranges do not overlap. We do not want to create the
 /// iterators when initializing this iterator to reduce the overhead of seeking.
@@ -43,9 +43,9 @@ impl SstConcatIterator {
         let mut iter = SstConcatIterator::new(sstables);
         // seek first
         if iter.next_sst_idx < iter.sstables.len() {
-            iter.current = Some(
-                SsTableIterator::create_and_seek_to_first(iter.sstables[iter.next_sst_idx].clone())?
-            );
+            iter.current = Some(SsTableIterator::create_and_seek_to_first(
+                iter.sstables[iter.next_sst_idx].clone(),
+            )?);
             iter.next_sst_idx += 1;
         }
         iter.move_until_valid()?;
@@ -56,15 +56,17 @@ impl SstConcatIterator {
     pub fn create_and_seek_to_key(sstables: Vec<Arc<SsTable>>, key: KeySlice) -> Result<Self> {
         let mut iter = SstConcatIterator::new(sstables);
         // seek key idx
-        iter.next_sst_idx = iter.sstables
+        iter.next_sst_idx = iter
+            .sstables
             .partition_point(|table| table.first_key().as_key_slice() <= key)
             .saturating_sub(1);
 
         // seek to key
         if iter.next_sst_idx < iter.sstables.len() {
-            iter.current = Some(
-                SsTableIterator::create_and_seek_to_key(iter.sstables[iter.next_sst_idx].clone(), key)?
-            );
+            iter.current = Some(SsTableIterator::create_and_seek_to_key(
+                iter.sstables[iter.next_sst_idx].clone(),
+                key,
+            )?);
             iter.next_sst_idx += 1;
             // verify is a valid iter
             iter.move_until_valid()?;
@@ -80,8 +82,8 @@ impl SstConcatIterator {
             }
             if self.next_sst_idx < self.sstables.len() {
                 self.current = Some(SsTableIterator::create_and_seek_to_first(
-                    self.sstables[self.next_sst_idx].clone())?
-                );
+                    self.sstables[self.next_sst_idx].clone(),
+                )?);
                 self.next_sst_idx += 1;
             } else {
                 self.current = None;

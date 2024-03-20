@@ -118,38 +118,44 @@ impl LsmStorageInner {
     fn compact_generate_sst_from_iter<I>(
         &self,
         mut iter: I,
-        compact_to_bottom_level: bool,
+        _compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>>
     where
         for<'a> I: StorageIterator<KeyType<'a> = KeySlice<'a>>,
     {
-        let mut builder = None;
+        let mut builder: Option<SsTableBuilder> = None;
         let mut sstables = vec![];
 
+        let mut prev_key: Vec<u8> = vec![];
         while iter.is_valid() {
-            if builder.is_none() {
+            let same_as_last_key = iter.key().key_ref() == prev_key;
+
+            if let Some(builder_inner) = builder.as_mut() {
+                if builder_inner.estimated_size() >= self.options.target_sst_size
+                    && !same_as_last_key
+                {
+                    let old_builder = builder.take().unwrap();
+                    let sst_id = self.next_sst_id();
+                    sstables.push(Arc::new(old_builder.build(
+                        sst_id,
+                        Some(self.block_cache.clone()),
+                        self.path_of_sst(sst_id),
+                    )?));
+                    builder = Some(SsTableBuilder::new(self.options.block_size));
+                }
+            } else {
                 builder = Some(SsTableBuilder::new(self.options.block_size));
             }
 
             let builder_inner = builder.as_mut().unwrap();
-            if compact_to_bottom_level {
-                if !iter.value().is_empty() {
-                    builder_inner.add(iter.key(), iter.value());
-                }
-            } else {
-                builder_inner.add(iter.key(), iter.value());
-            }
-            iter.next()?;
+            builder_inner.add(iter.key(), iter.value());
 
-            if builder_inner.estimated_size() >= self.options.target_sst_size {
-                let builder = builder.take().unwrap();
-                let sst_id = self.next_sst_id();
-                sstables.push(Arc::new(builder.build(
-                    sst_id,
-                    Some(self.block_cache.clone()),
-                    self.path_of_sst(sst_id),
-                )?));
+            if !same_as_last_key {
+                prev_key.clear();
+                prev_key.extend(iter.key().key_ref().iter());
             }
+
+            iter.next()?;
         }
         if let Some(builder) = builder {
             let sst_id = self.next_sst_id();
@@ -299,12 +305,7 @@ impl LsmStorageInner {
             }
             // rm old l0
             let mut old_id_set = l0_sstables.iter().copied().collect::<HashSet<_>>();
-            state.l0_sstables = state
-                .l0_sstables
-                .iter()
-                .filter(|id| !old_id_set.remove(id))
-                .copied()
-                .collect();
+            state.l0_sstables.retain(|id| !old_id_set.remove(id));
             // update old l1
             state.levels[0].1 = ids.clone();
 
@@ -398,10 +399,11 @@ impl LsmStorageInner {
     }
 
     fn trigger_flush(&self) -> Result<()> {
-        if {
+        let res = {
             let guard = self.state.read();
             guard.imm_memtables.len() >= self.options.num_memtable_limit
-        } {
+        };
+        if res {
             self.force_flush_next_imm_memtable()?;
         }
         Ok(())

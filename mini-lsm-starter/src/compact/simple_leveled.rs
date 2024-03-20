@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::lsm_storage::LsmStorageState;
 
@@ -38,39 +38,39 @@ impl SimpleLeveledCompactionController {
     ) -> Option<SimpleLeveledCompactionTask> {
         // level 0 compaction trigger
         if _snapshot.l0_sstables.len() >= self.options.level0_file_num_compaction_trigger {
-            return Some(
-                SimpleLeveledCompactionTask {
-                    upper_level: None,
-                    upper_level_sst_ids: _snapshot.l0_sstables.clone(),
-                    lower_level: 1,
-                    lower_level_sst_ids: _snapshot.levels[0].1.clone(),
-                    is_lower_level_bottom_level: self.options.max_levels == 1,
-                }
-            );
+            return Some(SimpleLeveledCompactionTask {
+                upper_level: None,
+                upper_level_sst_ids: _snapshot.l0_sstables.clone(),
+                lower_level: 1,
+                lower_level_sst_ids: _snapshot.levels[0].1.clone(),
+                is_lower_level_bottom_level: self.options.max_levels == 1,
+            });
         }
 
-        let level_sizes = _snapshot.levels
+        let level_sizes = _snapshot
+            .levels
             .iter()
             .map(|(_, level)| level.len())
             .collect::<Vec<_>>();
         // size ratio
         for i in 1..self.options.max_levels {
             let lower_level = i + 1;
-            let low_level_under = level_sizes[i - 1] as f64 * (self.options.size_ratio_percent as f64 / 100.0);
+            let low_level_under =
+                level_sizes[i - 1] as f64 * (self.options.size_ratio_percent as f64 / 100.0);
             if (level_sizes[lower_level - 1] as f64) < low_level_under {
                 println!(
                     "compaction triggered at level {} and {} with size ratio {}",
-                    i, lower_level, level_sizes[lower_level - 1] as f64 / level_sizes[i - 1] as f64
+                    i,
+                    lower_level,
+                    level_sizes[lower_level - 1] as f64 / level_sizes[i - 1] as f64
                 );
-                return Some(
-                    SimpleLeveledCompactionTask {
-                        upper_level: Some(i),
-                        upper_level_sst_ids: _snapshot.levels[i - 1].1.clone(),
-                        lower_level,
-                        lower_level_sst_ids: _snapshot.levels[lower_level - 1].1.clone(),
-                        is_lower_level_bottom_level: self.options.max_levels == lower_level,
-                    }
-                )
+                return Some(SimpleLeveledCompactionTask {
+                    upper_level: Some(i),
+                    upper_level_sst_ids: _snapshot.levels[i - 1].1.clone(),
+                    lower_level,
+                    lower_level_sst_ids: _snapshot.levels[lower_level - 1].1.clone(),
+                    is_lower_level_bottom_level: self.options.max_levels == lower_level,
+                });
             }
         }
 
@@ -95,11 +95,13 @@ impl SimpleLeveledCompactionController {
         if let Some(upper) = _task.upper_level.as_ref() {
             snapshot.levels[upper - 1].1.clear();
         } else {
-            let mut old_l0_set = _task.upper_level_sst_ids
+            let mut old_l0_set = _task
+                .upper_level_sst_ids
                 .iter()
                 .copied()
                 .collect::<HashSet<_>>();
-            snapshot.l0_sstables = snapshot.l0_sstables
+            snapshot.l0_sstables = snapshot
+                .l0_sstables
                 .iter()
                 .copied()
                 .filter(|id| !old_l0_set.remove(id))
@@ -107,7 +109,8 @@ impl SimpleLeveledCompactionController {
         }
         snapshot.levels[_task.lower_level - 1].1 = _output.to_vec();
         // rm files
-        let rm_files = _task.upper_level_sst_ids
+        let rm_files = _task
+            .upper_level_sst_ids
             .iter()
             .chain(_task.lower_level_sst_ids.iter())
             .copied()

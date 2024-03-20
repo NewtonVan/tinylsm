@@ -60,7 +60,7 @@ impl<I: StorageIterator> MergeIterator<I> {
             return Self {
                 iters: heap,
                 current: Some(HeapWrapper(0, iters.pop().unwrap())),
-            }
+            };
         }
 
         for (idx, it) in iters.into_iter().enumerate() {
@@ -91,7 +91,10 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
     }
 
     fn is_valid(&self) -> bool {
-        self.current.as_ref().map(|x| x.1.is_valid()).unwrap_or(false)
+        self.current
+            .as_ref()
+            .map(|x| x.1.is_valid())
+            .unwrap_or(false)
     }
 
     fn next(&mut self) -> Result<()> {
@@ -134,9 +137,10 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
             .iter()
             .map(|x| x.1.num_active_iterators())
             .sum::<usize>()
-            + self.current
-            .as_ref()
-            .map(|x| x.1.num_active_iterators())
-            .unwrap_or(0)
+            + self
+                .current
+                .as_ref()
+                .map(|x| x.1.num_active_iterators())
+                .unwrap_or(0)
     }
 }

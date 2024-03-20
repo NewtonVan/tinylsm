@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::lsm_storage::LsmStorageState;
 
@@ -39,7 +39,8 @@ impl TieredCompactionController {
         }
 
         // space amplification ratio
-        let size_before_last = snapshot.levels
+        let size_before_last = snapshot
+            .levels
             .iter()
             .take(snapshot.levels.len() - 1)
             .map(|(_, x)| x.len())
@@ -48,12 +49,10 @@ impl TieredCompactionController {
         let space_amp_ratio = (size_before_last as f64 / size_last as f64) * 100.0;
         if space_amp_ratio >= self.options.max_size_amplification_percent as f64 {
             println!("trigger compaction by space amplification ratio");
-            return Some(
-                TieredCompactionTask {
-                    tiers: snapshot.levels.clone(),
-                    bottom_tier_included: true,
-                }
-            );
+            return Some(TieredCompactionTask {
+                tiers: snapshot.levels.clone(),
+                bottom_tier_included: true,
+            });
         }
 
         // size ratio
@@ -64,32 +63,25 @@ impl TieredCompactionController {
             let size_ratio = prev_size as f64 / snapshot.levels[i].1.len() as f64;
             if size_ratio >= size_ratio_threshold {
                 println!("trigger compaction by size ratio");
-                return Some(
-                    TieredCompactionTask {
-                        tiers: snapshot.levels
-                            .iter()
-                            .take(i + 1)
-                            .cloned()
-                            .collect(),
-                        bottom_tier_included: i == snapshot.levels.len() - 1,
-                    }
-                )
+                return Some(TieredCompactionTask {
+                    tiers: snapshot.levels.iter().take(i + 1).cloned().collect(),
+                    bottom_tier_included: i == snapshot.levels.len() - 1,
+                });
             }
         }
 
         // reduce sorted run
         println!("trigger compaction by reduce sorted run");
         let num_iters_to_take = snapshot.levels.len() - self.options.num_tiers + 2;
-        return Some(
-            TieredCompactionTask {
-                tiers: snapshot.levels
-                    .iter()
-                    .take(num_iters_to_take)
-                    .cloned()
-                    .collect(),
-                bottom_tier_included: snapshot.levels.len() == num_iters_to_take,
-            }
-        );
+        return Some(TieredCompactionTask {
+            tiers: snapshot
+                .levels
+                .iter()
+                .take(num_iters_to_take)
+                .cloned()
+                .collect(),
+            bottom_tier_included: snapshot.levels.len() == num_iters_to_take,
+        });
     }
 
     pub fn apply_compaction_result(
@@ -103,7 +95,8 @@ impl TieredCompactionController {
         // only change levels
         let mut levels = vec![];
         let mut rm_files = vec![];
-        let mut compacted_tier = _task.tiers
+        let mut compacted_tier = _task
+            .tiers
             .iter()
             .map(|(x, y)| (*x, y.clone()))
             .collect::<HashMap<_, _>>();
