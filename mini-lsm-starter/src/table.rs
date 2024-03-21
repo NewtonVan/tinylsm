@@ -42,6 +42,7 @@ impl BlockMeta {
         block_meta: &[BlockMeta],
         #[allow(clippy::ptr_arg)] // remove this allow after you finish
         buf: &mut Vec<u8>,
+        max_ts: u64,
     ) {
         // num of blocks
         let mut estimated_size = SIZEOF_U32;
@@ -55,8 +56,8 @@ impl BlockMeta {
             estimated_size += SIZEOF_U16;
             estimated_size += meta.last_key.raw_len();
         }
-        // crc checksum
-        estimated_size += SIZEOF_U32;
+        // max ts + crc checksum
+        estimated_size += SIZEOF_U64 + SIZEOF_U32;
 
         // reserve to avoid frequently allocate space
         buf.reserve(estimated_size);
@@ -76,6 +77,7 @@ impl BlockMeta {
             buf.put_slice(meta.last_key.key_ref());
             buf.put_u64(meta.last_key.ts());
         }
+        buf.put_u64(max_ts);
         let checksum = crc32fast::hash(&buf[content_offset..]);
         buf.put_u32(checksum);
 
@@ -83,7 +85,7 @@ impl BlockMeta {
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(mut buf: &[u8]) -> Result<Vec<BlockMeta>> {
+    pub fn decode_block_meta(mut buf: &[u8]) -> Result<(Vec<BlockMeta>, u64)> {
         let mut block_meta = vec![];
         let num = buf.get_u32() as usize;
         let checksum = crc32fast::hash(&buf[..buf.remaining() - SIZEOF_U32]);
@@ -106,11 +108,12 @@ impl BlockMeta {
                 last_key,
             });
         }
+        let max_ts = buf.get_u64();
         if buf.get_u32() != checksum {
             bail!("meta checksum mismatched");
         }
 
-        Ok(block_meta)
+        Ok((block_meta, max_ts))
     }
 }
 
@@ -187,7 +190,7 @@ impl SsTable {
             block_meta_offset,
             (bloom_offset - (SIZEOF_U32 as u64)) - block_meta_offset,
         )?;
-        let block_meta = BlockMeta::decode_block_meta(&raw_meta_block[..])?;
+        let (block_meta, max_ts) = BlockMeta::decode_block_meta(&raw_meta_block[..])?;
         Ok(Self {
             id,
             file,
@@ -197,7 +200,7 @@ impl SsTable {
             block_meta,
             block_cache,
             bloom: Some(bloom),
-            max_ts: 0,
+            max_ts,
         })
     }
 

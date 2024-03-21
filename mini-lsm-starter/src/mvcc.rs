@@ -4,6 +4,8 @@
 pub mod txn;
 mod watermark;
 
+use crossbeam_skiplist::SkipMap;
+use std::sync::atomic::AtomicBool;
 use std::{
     collections::{BTreeMap, HashSet},
     sync::Arc,
@@ -55,6 +57,14 @@ impl LsmMvccInner {
     }
 
     pub fn new_txn(&self, inner: Arc<LsmStorageInner>, serializable: bool) -> Arc<Transaction> {
-        unimplemented!()
+        let ts = self.ts.lock();
+        let read_ts = ts.0;
+        Arc::new(Transaction {
+            read_ts,
+            inner,
+            local_storage: Arc::new(SkipMap::new()),
+            committed: Arc::new(AtomicBool::new(false)),
+            key_hashes: None,
+        })
     }
 }

@@ -24,25 +24,39 @@ pub struct LsmIterator {
     upper_bound: Bound<Bytes>,
     is_valid: bool,
     prev_key: Vec<u8>,
+    read_ts: u64,
 }
 
 impl LsmIterator {
-    pub(crate) fn new(iter: LsmIteratorInner, upper_bound: Bound<Bytes>) -> Result<Self> {
+    pub(crate) fn new(
+        iter: LsmIteratorInner,
+        upper_bound: Bound<Bytes>,
+        read_ts: u64,
+    ) -> Result<Self> {
         let mut ret = Self {
             is_valid: true,
             inner: iter,
             upper_bound,
             prev_key: vec![],
+            read_ts,
         };
         ret.is_valid = ret.is_valid_inner();
-        ret.skip_del_and_expired_key()?;
+        ret.move_to_latest_non_del()?;
         Ok(ret)
     }
 
-    fn skip_del_and_expired_key(&mut self) -> Result<()> {
+    fn move_to_latest_non_del(&mut self) -> Result<()> {
         loop {
-            // 1. newest
+            // 1. latest
+            // move to next key
             while self.is_valid() && self.key() == self.prev_key {
+                self.next_inner()?;
+            }
+            if !self.is_valid() {
+                break;
+            }
+            // skip future ts
+            while self.is_valid() && self.inner.key().ts() > self.read_ts {
                 self.next_inner()?;
             }
             if !self.is_valid() {
@@ -97,7 +111,7 @@ impl StorageIterator for LsmIterator {
 
     fn next(&mut self) -> Result<()> {
         self.next_inner()?;
-        self.skip_del_and_expired_key()?;
+        self.move_to_latest_non_del()?;
         Ok(())
     }
 
