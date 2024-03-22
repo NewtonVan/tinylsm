@@ -126,7 +126,9 @@ impl LsmStorageInner {
         let mut builder: Option<SsTableBuilder> = None;
         let mut sstables = vec![];
 
+        let watermark = self.mvcc().watermark();
         let mut prev_key: Vec<u8> = vec![];
+        let mut added_latest_watermark = false;
         while iter.is_valid() {
             let same_as_last_key = iter.key().key_ref() == prev_key;
 
@@ -147,12 +149,24 @@ impl LsmStorageInner {
                 builder = Some(SsTableBuilder::new(self.options.block_size));
             }
 
-            let builder_inner = builder.as_mut().unwrap();
-            builder_inner.add(iter.key(), iter.value());
-
+            // different key => update prev key, latest under watermark not added
             if !same_as_last_key {
                 prev_key.clear();
                 prev_key.extend(iter.key().key_ref().iter());
+                added_latest_watermark = false;
+            }
+            // above watermark => insert directly
+            // under watermark => insert latest
+            if iter.key().ts() > watermark || !added_latest_watermark {
+                // under watermark => block following same key with lower ts
+                if iter.key().ts() <= watermark {
+                    added_latest_watermark = true;
+                }
+                if !_compact_to_bottom_level || !iter.value().is_empty() || !added_latest_watermark
+                {
+                    let builder_inner = builder.as_mut().unwrap();
+                    builder_inner.add(iter.key(), iter.value());
+                }
             }
 
             iter.next()?;
