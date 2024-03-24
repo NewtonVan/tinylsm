@@ -22,7 +22,7 @@ pub use simple_leveled::{
 };
 pub use tiered::{TieredCompactionController, TieredCompactionOptions, TieredCompactionTask};
 
-use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::lsm_storage::{CompactionFilter, LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
@@ -118,7 +118,7 @@ impl LsmStorageInner {
     fn compact_generate_sst_from_iter<I>(
         &self,
         mut iter: I,
-        _compact_to_bottom_level: bool,
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>>
     where
         for<'a> I: StorageIterator<KeyType<'a> = KeySlice<'a>>,
@@ -129,6 +129,7 @@ impl LsmStorageInner {
         let watermark = self.mvcc().watermark();
         let mut prev_key: Vec<u8> = vec![];
         let mut added_latest_watermark = false;
+        let compaction_filters = self.compaction_filters.lock().clone();
         while iter.is_valid() {
             let same_as_last_key = iter.key().key_ref() == prev_key;
 
@@ -162,10 +163,39 @@ impl LsmStorageInner {
                 if iter.key().ts() <= watermark {
                     added_latest_watermark = true;
                 }
-                if !_compact_to_bottom_level || !iter.value().is_empty() || !added_latest_watermark
+                if compact_to_bottom_level
+                    && iter.value().is_empty()
+                    && iter.key().ts() <= watermark
                 {
-                    let builder_inner = builder.as_mut().unwrap();
-                    builder_inner.add(iter.key(), iter.value());
+                    // 1. bottom level
+                    // 2. first under watermark key
+                    // 3. it's delete
+                    // no need to add anymore
+                } else {
+                    let filtered = if iter.key().ts() > watermark || compaction_filters.is_empty() {
+                        false
+                    } else {
+                        // todo change to any logic like this
+                        // compaction_filters.iter().any(|filter|
+                        //     match filter { CompactionFilter::Prefix(x) => iter.key().key_ref().starts_with(x) }
+                        // );
+                        let mut filtered = false;
+                        for filter in &compaction_filters {
+                            match filter {
+                                CompactionFilter::Prefix(x) => {
+                                    if iter.key().key_ref().starts_with(x) {
+                                        filtered = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        filtered
+                    };
+                    if !filtered {
+                        let builder_inner = builder.as_mut().unwrap();
+                        builder_inner.add(iter.key(), iter.value());
+                    }
                 }
             }
 
